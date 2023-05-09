@@ -1,0 +1,549 @@
+policies:
+  - uid: linux-baseline
+    name: DevSec Linux Security Baseline
+    version: 2.9.0
+    license: Apache-2.0 
+    tags:
+      mondoo.com/category: security
+      mondoo.com/platform: linux,redhat,ubuntu,centos,debian,fedora,amazonlinux,rockylinux,suse,arch
+    authors:
+      - name: DevSec Hardening Framework Team
+        email: hello@dev-sec.io
+    docs:
+      desc: Test suite for best practice Linux OS hardening
+    groups:
+      - title: File Permissions
+        filters: |
+          asset.family.contains("linux")
+        checks:
+          - uid: os-01
+          - uid: os-02
+          - uid: os-03
+          - uid: os-03b
+          - uid: os-04
+          - uid: os-05
+          - uid: os-05b
+          - uid: os-07
+          - uid: os-09
+          - uid: os-10
+          - uid: os-11
+          - uid: os-13
+          - uid: os-14
+          - uid: os-15
+          - uid: os-16
+      - title: Packages
+        filters: |
+          asset.family.contains("linux")
+        checks:
+          - uid: package-01
+          - uid: package-02
+          - uid: package-03
+          - uid: package-05
+          - uid: package-06
+          - uid: package-08
+          - uid: package-09
+      - title: Kernel Parameters
+        filters: |
+          asset.family.contains("linux")
+          # do not run kernel parameter checks on container images
+          asset.kind != 'container' && asset.kind != 'container-image'
+        checks:
+          - uid: sysctl-01
+          - uid: sysctl-02
+          - uid: sysctl-03
+          - uid: sysctl-04
+          - uid: sysctl-05
+          - uid: sysctl-06
+          - uid: sysctl-07
+          - uid: sysctl-08
+          - uid: sysctl-09
+          - uid: sysctl-10
+          - uid: sysctl-11
+          - uid: sysctl-12
+          - uid: sysctl-13
+          - uid: sysctl-14
+          - uid: sysctl-15
+          - uid: sysctl-16
+          - uid: sysctl-17
+          - uid: sysctl-19
+          - uid: sysctl-20
+          - uid: sysctl-21
+          - uid: sysctl-22
+          - uid: sysctl-23
+          - uid: sysctl-24
+          - uid: sysctl-25
+          - uid: sysctl-26
+          - uid: sysctl-27
+          - uid: sysctl-28
+          - uid: sysctl-29
+          - uid: sysctl-30
+          - uid: sysctl-31a
+          - uid: sysctl-31b
+          - uid: sysctl-32
+          - uid: sysctl-34
+queries:
+  - uid: os-01
+    title: Trusted hosts login
+    mql: |
+      file('/etc/hosts.equiv').exists == false
+    docs:
+      desc: hosts.equiv file is a weak implemenation of authentication. Disabling the hosts.equiv support helps to prevent users from subverting the system's normal access control mechanisms of the system.
+  - uid: os-02
+    title: Check owner and permissions for /etc/shadow
+    mql: |
+      file("/etc/shadow") {
+        exists
+        user.name == "root"
+        permissions.isFile
+        permissions.user_executable == false
+        permissions.group_writeable == false
+        permissions.group_executable == false
+        permissions.other_readable == false
+        permissions.other_writeable == false
+        permissions.other_executable == false
+      }
+    docs:
+      desc: Check periodically the owner and permissions for /etc/shadow
+  - uid: os-03
+    title: Check owner and permissions for /etc/passwd
+    mql: |
+      file("/etc/passwd") {
+        exists
+        permissions.isFile
+        user.name == "root"
+        # owner
+        permissions.user_writeable == true
+        permissions.user_executable == false
+        permissions.user_readable == true
+        # group
+        permissions.group_writeable == false
+        permissions.group_executable == false
+        permissions.group_readable == true
+        # other
+        permissions.other_writeable == false
+        permissions.other_executable == false
+        permissions.other_readable == true
+      }
+    docs:
+      desc: Check periodically the owner and permissions for /etc/passwd
+  - uid: os-03b
+    title: Check passwords hashes in /etc/passwd
+    mql: |
+      file("/etc/passwd").content.trim.split("\n") { split(":")[1] == /x|\*/ }
+    docs:
+      desc: Check periodically that /etc/passwd does not contain passwords
+  - uid: os-04
+    title: Dot in PATH variable
+    mql: |
+      os.path.all(_ != "." && _ != "")
+    docs:
+      desc: Do not include the current working directory in PATH variable. This makes it easier for an attacker to gain extensive rights by executing a Trojan program
+  - uid: os-05
+    title: Check login.defs
+    props:
+      - uid: login_defs_umask
+        title: Default umask to set in login.defs
+        mql: |
+          if (asset.family.contains("redhat") || asset.platform == "amazonlinux") {
+            return "077"
+          }
+          return "027"
+    mql: |
+      file("/etc/login.defs") {
+        exists
+        permissions.isFile
+        user.name == "root"
+        permissions.user_executable == false
+        permissions.user_readable == true
+        permissions.group_writeable == false
+        permissions.group_executable == false
+        permissions.group_readable == true
+        permissions.other_writeable == false
+        permissions.other_executable == false
+        permissions.other_readable == true
+      }
+
+      # verify logindefs
+      logindefs.params["ENV_SUPATH"].contains("/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+      logindefs.params["ENV_PATH"].contains("/usr/local/bin:/usr/bin:/bin")
+      logindefs.params["UMASK"] == props.login_defs_umask
+      logindefs.params["PASS_MAX_DAYS"] == 60
+      logindefs.params["PASS_MIN_DAYS"] == 7
+      logindefs.params["PASS_WARN_AGE"] == 7
+      logindefs.params["LOGIN_RETRIES"] == 5
+      logindefs.params["LOGIN_TIMEOUT"] == 60
+      logindefs.params["UID_MIN"] == 1000
+      logindefs.params["GID_MIN"] == 1000
+    docs:
+      desc: Check owner and permissions for login.defs. Also check the configured PATH variable and umask in login.defs
+  - uid: os-05b
+    title: Check login.defs - RedHat specific
+    filters: asset.family.contains("redhat")
+    mql: |
+      logindefs.params["SYS_UID_MIN"] == 201
+      logindefs.params["SYS_UID_MAX"] == 999
+      logindefs.params["SYS_GID_MIN"] == 201
+      logindefs.params["SYS_GID_MAX"] == 999
+    docs:
+      desc: Check owner and permissions for login.defs. Also check the configured PATH variable and umask in login.defs
+  - uid: os-07
+    title: Unique uid and gid
+    mql: |
+      users.list.duplicates(uid).none()
+      groups.list.duplicates(gid).none()
+    docs:
+      desc: Check for unique uids gids
+  - uid: os-09
+    title: Check for .rhosts and .netrc file
+    mql: |
+      users.where(
+        shell.contains("nologin") == false && shell.contains("false") == false && name != "root" && name != "sync" && name != "shutdown" && name != "halt" 
+      ).list {
+        file(home + "/.rhosts").exists == false
+        file(home + "/.netrc").exists == false
+      }
+    docs:
+      desc: Find .rhosts and .netrc files - CIS Benchmark 9.2.9-10
+  - uid: os-10
+    title: Disable unused filesystems
+    mql: |
+      kernel.module("cramfs").loaded == false
+      kernel.module("freevxfs").loaded == false
+      kernel.module("jffs2").loaded == false
+      kernel.module("hfs").loaded == false
+      kernel.module("hfsplus").loaded == false
+      kernel.module("udf").loaded == false
+
+      # Ubuntu Snaps need SquashFS to function
+      if (asset.platform == "ubuntu") {
+        kernel.module("squashfs").loaded == false
+      }
+
+      # if efi is active, do not disable vfat.
+      # otherwise the system won't boot anymore
+      if (file('/sys/firmware/efi').exists == false) {
+        kernel.module("vfat").loaded == false
+      }
+    docs:
+      desc: 1.1.1 Ensure mounting of cramfs, freevxfs, jffs2, hfs, hfsplus, squashfs, udf, FAT
+  - uid: os-11
+    title: Protect log-directory
+    mql: |
+      file("/var/log") {
+        exists
+        user.name == "root"
+        group.name == /^root|syslog$/
+        permissions.isDirectory
+      }
+    docs:
+      desc: The log-directory /var/log should belong to root
+  - uid: os-13
+    title: Protect cron directories and files
+    mql: |
+      cron_files = ["/etc/crontab", "/etc/cron.hourly", "/etc/cron.daily", "/etc/cron.weekly", "/etc/cron.monthly", "/etc/cron.d"]
+      cron_files {
+        file(_).exists == false || file(_).user.name == "root"
+        file(_).exists == false || file(_).permissions.group_readable == false
+        file(_).exists == false || file(_).permissions.group_writeable == false
+        file(_).exists == false || file(_).permissions.other_readable == false
+        file(_).exists == false || file(_).permissions.other_writeable == false
+      }
+    docs:
+      desc: The cron directories and files should belong to root.
+  - uid: os-14
+    title: Check mountpoints for noexec mount options
+    props:
+      - uid: mount_exec_blocklist
+        title: List of mountspoints where 'noexec' mount option shoud be set
+        mql: |
+          return ["/boot", "/dev", "/dev/shm", "/tmp", "/var/log", "/var/log/audit", "/var/tmp"]
+    mql: |
+      props.mount_exec_blocklist {
+        mount.point(_).mounted == false || mount.point(_).options["noexec"] != null
+      }
+    docs:
+      desc: Use the noexec mount options to limit attack vectors via mount points
+  - uid: os-15
+    title: Check mountpoints for nosuid mount options
+    props:
+      - uid: mount_suid_blocklist
+        title: List of mountpoints where 'nosuid' mount option shoud be set
+        mql: |
+          return ["/boot", "/dev", "/dev/shm", "/home", "/run", "/tmp", "/var", "/var/log", "/var/log/audit", "/var/tmp"]
+    mql: |
+      props.mount_suid_blocklist {
+        mount.point(_).mounted == false || mount.point(_).options["nosuid"] != null
+      }
+    docs:
+      desc: Use the nosuid mount options to limit attack vectors via mount points
+  - uid: os-16
+    title: Check mountpoints for nodev mount options
+    props:
+      - uid: mount_dev_blocklist
+        title: List of mountpoints where 'nodev' mount option shoud be set
+        mql: |
+          return ["/boot", "/dev/shm", "/home", "/run", "/tmp", "/var", "/var/log", "/var/log/audit", "/var/tmp"]
+    mql: |
+      props.mount_dev_blocklist {
+        mount.point(_).mounted == false || mount.point(_).options["nodev"] != null
+      }
+    docs:
+      desc: Use the nodev mount options to limit attack vectors via mount points
+  - uid: package-01
+    title: Do not run deprecated inetd or xinetd
+    mql: |
+      package('inetd').installed == false
+      package('xinetd').installed == false
+    docs:
+      desc: http://www.nsa.gov/ia/_files/os/redhat/rhel5-guide-i731.pdf, Chapter 3.2.1
+  - uid: package-02
+    title: Do not install Telnet server
+    mql: package('telnetd').installed == false
+    docs:
+      desc: Telnet protocol uses unencrypted communication, that means the password and other sensitive data are unencrypted. http://www.nsa.gov/ia/_files/os/redhat/rhel5-guide-i731.pdf, Chapter 3.2.2
+  - uid: package-03
+    title: Do not install rsh server
+    mql: package('rsh-server').installed == false
+    docs:
+      desc: The r-commands suffers same problem as telnet. http://www.nsa.gov/ia/_files/os/redhat/rhel5-guide-i731.pdf, Chapter 3.2.3
+  - uid: package-05
+    title: Do not install ypserv server (NIS)
+    mql: package('ypserv').installed == false
+    docs:
+      desc: Network Information Service (NIS) has some security design weaknesses like inadequate protection of important authentication information. http://www.nsa.gov/ia/_files/os/redhat/rhel5-guide-i731.pdf, Chapter 3.2.4
+  - uid: package-06
+    title: Do not install tftp server
+    mql: package('tftp-server').installed == false
+    docs:
+      desc: tftp-server provides little security http://www.nsa.gov/ia/_files/os/redhat/rhel5-guide-i731.pdf, Chapter 3.2.5
+  - uid: package-08
+    title: Install auditd
+    mql: |
+      if (asset.family.contains("redhat") || asset.family.contains("suse") || asset.platform == "amazonlinux" || asset.platform == "fedora" || asset.platform == "arch") {
+        package("audit").installed == true
+      } else {
+        package("auditd").installed == true
+      }
+
+      parse.ini("/etc/audit/auditd.conf") {
+        params["log_file"] == "/var/log/audit/audit.log"
+        params["log_format"] == "RAW"
+        params["flush"] == /^incremental|INCREMENTAL|incremental_async|INCREMENTAL_ASYNC$/
+        params["max_log_file_action"] == "keep_logs"
+        params["max_log_file"] != ""
+        params["action_mail_acct"] == "root"
+        params["space_left_action"] == "SYSLOG"
+        params["admin_space_left"] == 50
+        params["admin_space_left_action"] == "SUSPEND"
+        params["disk_full_action"] == "SUSPEND"
+        params["disk_error_action"] == "SUSPEND"
+      }
+    docs:
+      desc: auditd provides extended logging capabilities on recent distributions
+  - uid: package-09
+    title: Additional process hardening
+    mql: package('prelink').installed == false
+    docs:
+      desc: Ensure prelink is disabled
+  - uid: sysctl-01
+    title: IPv4 Forwarding
+    mql: |
+      kernel.parameters["net.ipv4.ip_forward"] == 0
+      kernel.parameters["net.ipv4.conf.all.forwarding"] == 0
+    docs:
+      desc: If you're not intending for your system to forward traffic between interfaces, or if you only have a single interface, the forwarding function must be disable.
+  - uid: sysctl-02
+    title: Reverse path filtering
+    mql: |
+      kernel.parameters["net.ipv4.conf.all.rp_filter"] == 1
+      kernel.parameters["net.ipv4.conf.default.rp_filter"] == 1
+    docs:
+      desc: The rp_filter can reject incoming packets if their source address doesn't match the network interface that they're arriving on, which helps to prevent IP spoofing.
+  - uid: sysctl-03
+    title: ICMP ignore bogus error responses
+    mql: |
+      kernel.parameters["net.ipv4.icmp_ignore_bogus_error_responses"] == 1
+    docs:
+      desc: Sometimes routers send out invalid responses to broadcast frames. This is a violation of RFC 1122 and the kernel will logged this. To avoid filling up your logfile with unnecessary stuff, you can tell the kernel not to issue these warnings
+  - uid: sysctl-04
+    title: ICMP echo ignore broadcasts
+    mql: |
+      kernel.parameters["net.ipv4.icmp_echo_ignore_broadcasts"] == 1
+    docs:
+      desc: Blocking ICMP ECHO requests to broadcast addresses
+  - uid: sysctl-05
+    title: ICMP ratelimit
+    mql: |
+      kernel.parameters["net.ipv4.icmp_ratelimit"] == 100
+    docs:
+      desc: icmp_ratelimit defines how many packets that match the icmp_ratemask per second
+  - uid: sysctl-06
+    title: ICMP ratemask
+    mql: |
+      kernel.parameters["net.ipv4.icmp_ratemask"] == 88089
+    docs:
+      desc: Ratemask is a logical OR of all ICMP codes to rate limit
+  - uid: sysctl-07
+    title: TCP timestamps
+    mql: kernel.parameters["net.ipv4.tcp_timestamps"] == 0
+    docs:
+      desc: It is possible to estimate the current uptime of a Linux system. It's preferable to disable TCP timestamps on your systems.
+  - uid: sysctl-08
+    title: ARP ignore
+    mql: kernel.parameters["net.ipv4.conf.all.arp_ignore"] == /(1|2)/
+    docs:
+      desc: Reply only if the target IP address is local address configured on the incoming interface.
+  - uid: sysctl-09
+    title: ARP announce
+    mql: kernel.parameters["net.ipv4.conf.all.arp_announce"] == 2
+    docs:
+      desc: "Always use the best local address for this target. In this mode we ignore the source address in the IP packet and try to select local address that we prefer for talks with\tthe target host."
+  - uid: sysctl-10
+    title: TCP RFC1337 Protect Against TCP Time-Wait
+    mql: kernel.parameters["net.ipv4.tcp_rfc1337"] == 1
+    docs:
+      desc: This enables a fix for time-wait assassination hazards in tcp, described in RFC 1337. If enabled, this causes the kernel to drop RST packets for sockets in the time-wait state.
+  - uid: sysctl-11
+    title: Protection against SYN flood attacks
+    mql: kernel.parameters["net.ipv4.tcp_syncookies"] == 1
+    docs:
+      desc: A SYN-Attack is a denial of service (DoS) attack that consumes resources on your system forcing you to reboot.
+  - uid: sysctl-12
+    title: Shared Media IP Architecture
+    mql: |
+      kernel.parameters["net.ipv4.conf.all.shared_media"] == 1
+      kernel.parameters["net.ipv4.conf.default.shared_media"] == 1
+    docs:
+      desc: Send(router) or accept(host) RFC1620 shared media redirects. If it is not set the kernel does not assume that different subnets on this device can communicate directly.
+  - uid: sysctl-13
+    title: Disable Source Routing
+    mql: |
+      kernel.parameters["net.ipv4.conf.all.accept_source_route"] == 0
+      kernel.parameters["net.ipv4.conf.default.accept_source_route"] == 0
+      kernel.parameters["net.ipv6.conf.all.accept_source_route"] == 0
+      kernel.parameters["net.ipv6.conf.default.accept_source_route"] == 0
+    docs:
+      desc: The accept_source_route option causes network interfaces to accept packets with the Strict Source Route (SSR) or Loose Source Routing (LSR) option set. An attacker is able to send a source routed packet into the network, then he could intercept the replies and your server might not know that it is not communicating with a trusted server
+  - uid: sysctl-14
+    title: Disable acceptance of all IPv4 redirected packets
+    mql: |
+      kernel.parameters["net.ipv4.conf.all.accept_redirects"] == 0
+      kernel.parameters["net.ipv4.conf.default.accept_redirects"] == 0
+    docs:
+      desc: Disable acceptance of all redirected packets these prevents Man-in-the-Middle attacks.
+  - uid: sysctl-15
+    title: Disable acceptance of all secure redirected packets
+    mql: |
+      kernel.parameters["net.ipv4.conf.all.secure_redirects"] == 0
+      kernel.parameters["net.ipv4.conf.default.secure_redirects"] == 0
+    docs:
+      desc: Disable acceptance of all secure redirected packets these prevents Man-in-the-Middle attacks.
+  - uid: sysctl-16
+    title: Disable sending of redirects packets
+    mql: |
+      kernel.parameters["net.ipv4.conf.all.send_redirects"] == 0
+      kernel.parameters["net.ipv4.conf.default.send_redirects"] == 0  
+    docs:
+      desc: Disable sending of redirects packets
+  - uid: sysctl-17
+    title: Disable log martians
+    mql: |
+      kernel.parameters["net.ipv4.conf.all.log_martians"] == 1
+      kernel.parameters["net.ipv4.conf.default.log_martians"] == 1
+    docs:
+      desc: log_martians can cause a denial of service attack to the host
+  - uid: sysctl-19
+    title: IPv6 Forwarding
+    mql: kernel.parameters["net.ipv6.conf.all.forwarding"] == 0
+    docs:
+      desc: If you're not intending for your system to forward traffic between interfaces, or if you only have a single interface, the forwarding function must be disable.
+  - uid: sysctl-20
+    title: Disable acceptance of all IPv6 redirected packets
+    mql: |
+      kernel.parameters["net.ipv6.conf.all.accept_redirects"] == 0
+      kernel.parameters["net.ipv6.conf.default.accept_redirects"] == 0
+    docs:
+      desc: Disable acceptance of all redirected packets these prevents Man-in-the-Middle attacks.
+  - uid: sysctl-21
+    title: Disable acceptance of IPv6 router solicitations messages
+    mql: kernel.parameters["net.ipv6.conf.default.router_solicitations"] == 0
+    docs:
+      desc: The router solicitations setting determines how many router solicitations are sent when bringing up the interface. If addresses are statically assigned, there is no need to send any solicitations.
+  - uid: sysctl-22
+    title: Disable Accept Router Preference from router advertisement
+    mql: kernel.parameters["net.ipv6.conf.default.accept_ra_rtr_pref"] == 0
+    docs:
+      desc: Disable Accept Router Preference from router advertisement
+  - uid: sysctl-23
+    title: Disable learning Prefix Information from router advertisement
+    mql: kernel.parameters["net.ipv6.conf.default.accept_ra_pinfo"] == 0
+    docs:
+      desc: The accept_ra_pinfo setting controls whether the system will accept prefix info from the router.
+  - uid: sysctl-24
+    title: Disable learning Hop limit from router advertisement
+    mql: kernel.parameters["net.ipv6.conf.default.accept_ra_defrtr"] == 0
+    docs:
+      desc: The accept_ra_defrtr setting controls whether the system will accept Hop Limit settings from a router advertisement. Setting it to 0 prevents a router from changing your default IPv6 Hop Limit for outgoing packets.
+  - uid: sysctl-25
+    title: Disable the system`s acceptance of router advertisement
+    mql: |
+      kernel.parameters["net.ipv6.conf.all.accept_ra"] == 0
+      kernel.parameters["net.ipv6.conf.default.accept_ra"] == 0
+    docs:
+      desc: Setting controls whether the system will accept router advertisement
+  - uid: sysctl-26
+    title: Disable IPv6 autoconfiguration
+    mql: |
+      kernel.parameters["net.ipv6.conf.all.autoconf"] == 0
+      kernel.parameters["net.ipv6.conf.default.autoconf"] == 0
+    docs:
+      desc: The autoconf setting controls whether router advertisements can cause the system to assign a global unicast address to an interface.
+  - uid: sysctl-27
+    title: Disable neighbor solicitations to send out per address
+    mql: kernel.parameters["net.ipv6.conf.default.dad_transmits"] == 0
+    docs:
+      desc: The dad_transmits setting determines how many neighbor solicitations to send out per address (global and link-local) when bringing up an interface to ensure the desired address is unique on the network.
+  - uid: sysctl-28
+    title: Assign one global unicast IPv6 addresses to each interface
+    mql: kernel.parameters["net.ipv6.conf.default.max_addresses"] == 1
+    docs:
+      desc: The max_addresses setting determines how many global unicast IPv6 addresses can be assigned to each interface. The default is 16, but it should be set to exactly the number of statically configured global addresses required.
+  - uid: sysctl-29
+    title: Disable loading kernel modules
+    mql: kernel.parameters["kernel.modules_disabled"] == 0
+    docs:
+      desc: The sysctl key kernel.modules_disabled is very straightforward. If it contains a "1" it will disable loading new modules, where a "0" will still allow loading them. Using this option will be a great protection against loading malicious kernel modules.
+  - uid: sysctl-30
+    title: Magic SysRq
+    mql: kernel.parameters["kernel.sysrq"] == 0
+    docs:
+      desc: Kernel.sysreg is a 'magical' key combo you can hit which the kernel will respond to regardless of whatever else it is doing, unless it is completely locked up.
+  - uid: sysctl-31a
+    title: Secure Core Dumps - dump settings
+    mql: kernel.parameters["fs.suid_dumpable"] == /(0|2)/
+    docs:
+      desc: Ensure that core dumps can never be made by setuid programs
+  - uid: sysctl-31b
+    title: Secure Core Dumps - dump path
+    mql: |
+      if (kernel.parameters["fs.suid_dumpable"] == 2) {
+        kernel.parameters["kernel.core_pattern"] == /^\\|\/.*/
+      }
+    docs:
+      desc: Ensure that core dumps are done with fully qualified path
+  - uid: sysctl-32
+    title: kernel.randomize_va_space
+    mql: kernel.parameters["kernel.randomize_va_space"] == 2
+    docs:
+      desc: kernel.randomize_va_space
+  - uid: sysctl-34
+    title: Ensure links are protected
+    mql: |
+      kernel.parameters["fs.protected_hardlinks"] == 1
+      kernel.parameters["fs.protected_symlinks"] == 1
+
+      # include null because RHEL7 does not have this parameter
+      kernel.parameters["fs.protected_fifos"] == /(1|2)/ || kernel.parameters["fs.protected_fifos"] == null
+      kernel.parameters["fs.protected_regular"] == 2 ||  kernel.parameters["fs.protected_regular"] == null
+    docs:
+      desc: Protects against common exploits in regards to links, fifos and regular files created or controlled by attackers
